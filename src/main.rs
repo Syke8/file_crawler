@@ -180,6 +180,8 @@ struct Crawl {
     date_time: String,
     #[serde(rename = "ToolRevision")]
     used_tool_revision: u32, // for compatibility in the long run
+    #[serde(rename = "EntryCount")]
+    entry_count: usize,
     #[serde(rename = "Entries")]
     entries_info: Vec<EntryInfo>,
 }
@@ -231,6 +233,7 @@ async fn file_recorder(mut receiver: UnboundedReceiver<RecorderSignal>, jobs_wor
     let crawl = Crawl {
         date_time,
         used_tool_revision: TOOL_REVISION,
+        entry_count: entries_info.len(),
         entries_info,
     };
 
