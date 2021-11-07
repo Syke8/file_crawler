@@ -183,7 +183,7 @@ impl Hash for EntryInfo {
     }
 }
 
-#[derive(Serialize, Deserialize, PartialEq, Eq)]
+#[derive(Serialize, Deserialize, Eq)]
 struct Crawl {
     #[serde(rename = "DateTime")]
     date_time: String,
@@ -195,9 +195,32 @@ struct Crawl {
     entries_info: HashSet<EntryInfo>,
 }
 
+impl PartialEq for Crawl {
+    // Don't take in account the datetime because it's purely for information to the user
+    fn eq(&self, other: &Self) -> bool {
+        self.used_tool_revision == other.used_tool_revision
+            && self.entry_count == other.entry_count
+            && self.entries_info == other.entries_info
+    }
+}
+
 enum RecorderSignal {
     EntriesVec(Box<Vec<EntryInfo>>),
     Close,
+}
+
+async fn compare_analysis(first_file: &str, second_file: &str) {
+    let first_analysis =
+        serde_json::from_slice::<Crawl>(fs::read(first_file).unwrap().as_slice()).unwrap();
+
+    let second_analysis =
+        serde_json::from_slice::<Crawl>(fs::read(second_file).unwrap().as_slice()).unwrap();
+
+    if first_analysis == second_analysis {
+        println!("THEY ARE THE SAME !");
+    } else {
+        println!("THEY ARE DIFFERENT !");
+    }
 }
 
 async fn file_recorder(mut receiver: UnboundedReceiver<RecorderSignal>, jobs_working: usize) {
