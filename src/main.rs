@@ -2,6 +2,7 @@ use std::{
     collections::HashSet,
     env,
     fs::{self, File},
+    hash::{Hash, Hasher},
     io::{stdin, ErrorKind, Write},
     path::Path,
     time::Instant,
@@ -157,14 +158,14 @@ fn load_auto_mode_folders() -> HashSet<String> {
     ])
 }
 
-#[derive(Serialize, Deserialize)]
+#[derive(Serialize, Deserialize, PartialEq, Eq, Hash)]
 enum EntryType {
     File,
     Directory,
     Unknown,
 }
 
-#[derive(Serialize, Deserialize)]
+#[derive(Serialize, Deserialize, PartialEq, Eq)]
 struct EntryInfo {
     #[serde(rename = "Type")]
     entry_type: EntryType,
@@ -174,7 +175,15 @@ struct EntryInfo {
     octets: u64,
 }
 
-#[derive(Serialize, Deserialize)]
+impl Hash for EntryInfo {
+    fn hash<H: Hasher>(&self, state: &mut H) {
+        self.entry_type.hash(state);
+        self.path.hash(state);
+        self.octets.hash(state);
+    }
+}
+
+#[derive(Serialize, Deserialize, PartialEq, Eq)]
 struct Crawl {
     #[serde(rename = "DateTime")]
     date_time: String,
@@ -183,7 +192,7 @@ struct Crawl {
     #[serde(rename = "EntryCount")]
     entry_count: usize,
     #[serde(rename = "Entries")]
-    entries_info: Vec<EntryInfo>,
+    entries_info: HashSet<EntryInfo>,
 }
 
 enum RecorderSignal {
@@ -194,12 +203,14 @@ enum RecorderSignal {
 async fn file_recorder(mut receiver: UnboundedReceiver<RecorderSignal>, jobs_working: usize) {
     let mut jobs_done = 0usize;
 
-    let mut entries_info: Vec<EntryInfo> = Vec::new();
+    let mut entries_info: HashSet<EntryInfo> = HashSet::new();
 
     while let Some(signal) = receiver.next().await {
         match signal {
-            RecorderSignal::EntriesVec(mut entries) => {
-                entries_info.append(entries.as_mut());
+            RecorderSignal::EntriesVec(entries) => {
+                for entry in entries.into_iter() {
+                    entries_info.insert(entry);
+                }
 
                 jobs_done += 1;
 
