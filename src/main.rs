@@ -69,6 +69,15 @@ async fn main() {
         return;
     }
 
+    let start_instant = Instant::now();
+    compare_analysis(
+        "record_2021-11-07_01-47-59.json",
+        "record_2021-11-07_01-48-00.json",
+    )
+    .await;
+    println!("Time : {}ms", start_instant.elapsed().as_millis());
+    return;
+
     let folders: HashSet<String>;
 
     if manual_mode() {
@@ -209,6 +218,40 @@ enum RecorderSignal {
     Close,
 }
 
+#[derive(Serialize)]
+enum EntryDifferenceType {
+    New,
+    Removed,
+    SizeChange,
+    NoChange,
+}
+
+#[derive(Serialize)]
+struct EntryDifference<'a> {
+    #[serde(rename = "Type")]
+    entry_type: &'a EntryType,
+    #[serde(rename = "DifferenceType")]
+    difference_type: EntryDifferenceType,
+    #[serde(rename = "Path")]
+    #[serde(skip_serializing_if = "Option::is_none")]
+    path: Option<&'a str>, // None if difference_type == Removed
+    #[serde(rename = "OctetsDifference")]
+    #[serde(skip_serializing_if = "octets_is_zero")]
+    octets_difference: u64,
+}
+
+fn octets_is_zero(diff: &u64) -> bool {
+    *diff == 0
+}
+
+#[derive(Serialize)]
+struct DifferenceAnalysis<'a> {
+    #[serde(rename = "DateTime")]
+    date_time: String,
+    #[serde(rename = "EntriesDifference")]
+    entries_difference: Vec<EntryDifference<'a>>,
+}
+
 async fn compare_analysis(first_file: &str, second_file: &str) {
     let first_analysis =
         serde_json::from_slice::<Crawl>(fs::read(first_file).unwrap().as_slice()).unwrap();
@@ -216,10 +259,53 @@ async fn compare_analysis(first_file: &str, second_file: &str) {
     let second_analysis =
         serde_json::from_slice::<Crawl>(fs::read(second_file).unwrap().as_slice()).unwrap();
 
-    if first_analysis == second_analysis {
-        println!("THEY ARE THE SAME !");
-    } else {
-        println!("THEY ARE DIFFERENT !");
+    let entries_not_changed = first_analysis
+        .entries_info
+        .intersection(&second_analysis.entries_info);
+
+    let entries_changed = first_analysis
+        .entries_info
+        .difference(&second_analysis.entries_info);
+
+    let mut difference_analysis = Vec::new();
+
+    for entry in entries_not_changed {
+        difference_analysis.push(EntryDifference {
+            entry_type: &entry.entry_type,
+            difference_type: EntryDifferenceType::NoChange,
+            path: Some(&entry.path),
+            octets_difference: 0,
+        });
+    }
+
+    for entry in entries_changed {
+        difference_analysis.push(EntryDifference {
+            entry_type: &entry.entry_type,
+            difference_type: EntryDifferenceType::New,
+            path: Some(&entry.path),
+            octets_difference: entry.octets,
+        });
+    }
+
+    let date_time = Local::now().format("%F_%H-%M-%S").to_string();
+
+    let mut analysis_file = match File::create(format!("analysis_{}.json", &date_time)) {
+        Ok(file) => file,
+        Err(_) => {
+            println!("Couldn't create the result file");
+            return;
+        }
+    };
+
+    let analysis = DifferenceAnalysis {
+        date_time,
+        entries_difference: difference_analysis,
+    };
+
+    if let Ok(analysis_json) = serde_json::to_string_pretty(&analysis) {
+        if let Err(_) = analysis_file.write_all(analysis_json.as_bytes()) {
+            println!("Couldn't write into analysis file");
+        }
     }
 }
 
@@ -254,9 +340,9 @@ async fn file_recorder(mut receiver: UnboundedReceiver<RecorderSignal>, jobs_wor
     }
     drop(receiver);
 
-    let date_time = Local::now().format("analysis_%F_%H-%M-%S").to_string();
+    let date_time = Local::now().format("%F_%H-%M-%S").to_string();
 
-    let mut crawl_file = match File::create(format!("{}.json", &date_time)) {
+    let mut crawl_file = match File::create(format!("record_{}.json", &date_time)) {
         Ok(file) => file,
         Err(_) => {
             println!("Couldn't create the result file");
@@ -273,7 +359,7 @@ async fn file_recorder(mut receiver: UnboundedReceiver<RecorderSignal>, jobs_wor
 
     if let Ok(crawl_json) = serde_json::to_string_pretty(&crawl) {
         if let Err(_) = crawl_file.write_all(crawl_json.as_bytes()) {
-            println!("Couldn't write into result file");
+            println!("Couldn't write into record file");
         }
     }
 }
