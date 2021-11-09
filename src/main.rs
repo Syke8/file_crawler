@@ -16,7 +16,7 @@ use futures::{
     StreamExt,
 };
 use serde::{Deserialize, Serialize};
-use serde_json::Value;
+use serde_json::{map::Entry, Value};
 
 const TOOL_REVISION: u32 = 1;
 
@@ -181,6 +181,7 @@ struct EntryInfo {
     #[serde(rename = "Path")]
     path: String,
     #[serde(rename = "Octets")]
+    #[serde(skip_serializing_if = "octets_is_zero")]
     octets: u64,
 }
 
@@ -258,6 +259,39 @@ async fn compare_analysis(first_file: &str, second_file: &str) {
 
     let second_analysis =
         serde_json::from_slice::<Crawl>(fs::read(second_file).unwrap().as_slice()).unwrap();
+
+    // get the dates and compare the oldest it with the newest
+
+    // const core_count: usize = 24;
+
+    // if first_analysis.entry_count >= core_count {
+    //     let sub_task_count = first_analysis.entry_count / core_count;
+    //     let sub_task_count_rest = first_analysis.entry_count % core_count;
+
+    //     let mut tasks = Vec::with_capacity(core_count);
+
+    //     let entries_vec: Vec<EntryInfo> = first_analysis.entries_info.into_iter().collect();
+
+    //     let mut step = 0usize;
+
+    //     for core in 0..core_count {
+    //         let range: usize;
+
+    //         if core == core_count - 1 {
+    //             range = sub_task_count + sub_task_count_rest;
+    //         } else {
+    //             range = sub_task_count;
+    //         }
+
+    //         let sub_tasks = entries_vec[step..step + range].to_vec();
+
+    //         tasks.push(task::spawn(async move { for entry in sub_tasks {} }));
+
+    //         step += range;
+    //     }
+
+    //     join_all(tasks).await;
+    // }
 
     let entries_not_changed = first_analysis
         .entries_info
